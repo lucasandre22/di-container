@@ -9,9 +9,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.reflections.Reflections;
-import org.reflections.scanners.FieldAnnotationsScanner;
-import org.reflections.scanners.MethodParameterScanner;
-import org.reflections.util.ClasspathHelper;
+import org.reflections.scanners.Scanners;
+import org.reflections.scanners.Scanners.*;
 import org.reflections.util.ConfigurationBuilder;
 
 import com.dicontainer.annotations.Dependency;
@@ -39,9 +38,12 @@ public class Container {
             new HashMap<Class<?>, Constructor<?>>();
 
     private Reflections reflections = //new Reflections("all");
-    new Reflections(new ConfigurationBuilder()
+            new Reflections(new ConfigurationBuilder()
+            .forPackage("all")
+            .setScanners(Scanners.ConstructorsAnnotated, Scanners.TypesAnnotated));
+    /*new Reflections(new ConfigurationBuilder()
             .setUrls(ClasspathHelper.forPackage("all"))
-            .setScanners(new FieldAnnotationsScanner(), new MethodParameterScanner()));
+            .setScanners(new FieldAnnotationsScanner(), new MethodParameterScanner()));*/
     private ConfigHolder configHolder;
 
     static {
@@ -69,9 +71,10 @@ public class Container {
         public Object instantiate() {
             Object instance = null;
             try {
+                //fix this
                 instance = constructorToCall.newInstance();
             } catch(Exception e) {
-                
+                System.out.println(e);
             }
             return instance;
         }
@@ -85,6 +88,8 @@ public class Container {
         //loadConfig();
         loadDependencies();
         loadConstructorsToInject();
+        //use this
+        this.getClass().getPackage();
     }
 
     public synchronized static Container getInstance() {
@@ -94,15 +99,16 @@ public class Container {
     }
 
     private Constructor<?> getConstructorToInstantiateDependency(Class<?> dependency) {
+        //TODO: fix to get the exactly construtor to instantiate dependency
         for(Constructor<?> constructor : dependency.getConstructors()) {
-            if(constructor.getDeclaredAnnotation(ToInject.class) != null)
                 return constructor;
         }
         return null;
     }
 
     private <V> void loadDependencies() {
-        for(Class<?> dependencyClass : reflections.getTypesAnnotatedWith(Dependency.class)) {
+        for(Class<?> dependencyClass : reflections.get(
+                Scanners.TypesAnnotated.with(Dependency.class).as(Class.class))) {
             Constructor<?> constructorToCall = getConstructorToInstantiateDependency(dependencyClass);
             String annotatedValue = dependencyClass.getDeclaredAnnotation(Dependency.class).to();
             Class<?> referredInterface;
@@ -122,8 +128,9 @@ public class Container {
     }*/
 
     private void loadConstructorsToInject() {
-        for(Constructor<?> constructor : reflections.getConstructorsAnnotatedWith(ToInject.class)) {
-            constructorsToInject.put(constructor.getClass(), constructor);
+        for(Constructor<?> constructor : reflections.get(
+                Scanners.ConstructorsAnnotated.with(ToInject.class).as(Constructor.class))) {
+            constructorsToInject.put(constructor.getDeclaringClass(), constructor);
         }
     }
 
@@ -165,7 +172,6 @@ public class Container {
             DependencyToInject dependency = dependenciesToInjectByInterface.get(constructorParameter);
             if(dependency != null) {
                 parametersArray[i++] = dependency.instantiate();
-                constructorToInject.newInstance();
             }
         }
         if(i == 0)
