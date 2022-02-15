@@ -1,10 +1,7 @@
 package com.dicontainer;
 
-import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -14,11 +11,6 @@ import org.reflections.util.ConfigurationBuilder;
 
 import com.dicontainer.annotations.Dependency;
 import com.dicontainer.annotations.ToInject;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
-import lombok.Getter;
-import lombok.Setter;
 
 /**
  * A basic Dependency Injection Container built to understand the principle
@@ -28,7 +20,6 @@ import lombok.Setter;
 public class Container {
 
     private static Container INSTANCE;
-    private static final GsonBuilder GSON_BUILDER = new GsonBuilder();
 
     // Interface -> dependency
     private Map<Class<?>, DependencyToInject> dependenciesToInjectByInterface = 
@@ -43,10 +34,9 @@ public class Container {
             .setScanners(Scanners.ConstructorsAnnotated, Scanners.TypesAnnotated));
 
     static {
-        GSON_BUILDER.setPrettyPrinting();
+
     }
 
-    @Getter @Setter
     private class DependencyToInject {
         private Constructor<?> constructorToCall; //Constructor of the dependency to call.
         private Class<?> dependencyClass; //Class to be instantiated.
@@ -82,7 +72,7 @@ public class Container {
     }
 
     private Constructor<?> getConstructorToInstantiateDependency(Class<?> dependency) {
-        //TODO: fix to get the exactly construtor to instantiate dependency
+        //TODO: fix to get the exactly construtor to instantiate dependency (maybe annotation but one more?)
         for(Constructor<?> constructor : dependency.getConstructors()) {
                 return constructor;
         }
@@ -112,15 +102,6 @@ public class Container {
         }
     }
 
-    private String getFileContent(String filename) throws IOException {
-        Path filePath = Path.of(filename);
-        return Files.readString(filePath);
-    }
-
-    private Constructor<?> getConstructorToInject(Class<?> clazz) {
-        return constructorsToInject.get(clazz);
-    }
-
     /**
      * Instantiate the dependency based on a dependencyReceiver class parameter.
      * It injects all dependencies that are marked by the @Dependency annotation
@@ -134,7 +115,7 @@ public class Container {
             throws InstantiationException, IllegalAccessException,
             IllegalArgumentException, InvocationTargetException
     {
-        Constructor<?> constructorToInject = getConstructorToInject(dependencyReceiver);
+        Constructor<?> constructorToInject = constructorsToInject.get(dependencyReceiver);
         Object[] parametersArray = new Object[constructorToInject.getParameterCount()];
         int i = 0;
         for(Class<?> constructorParameter : constructorToInject.getParameterTypes())

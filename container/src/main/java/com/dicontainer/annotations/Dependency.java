@@ -1,7 +1,9 @@
 package com.dicontainer.annotations;
 
+import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
  * Annotation that represents the dependency and stores the respective
@@ -11,6 +13,7 @@ import java.lang.annotation.RetentionPolicy;
  *
  * @param to the class canonical name that the dependency will be injected
  */
+@Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Dependency {
     public String to();
