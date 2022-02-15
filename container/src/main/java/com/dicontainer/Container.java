@@ -2,11 +2,17 @@ package com.dicontainer;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.reflections.Reflections;
+import org.reflections.scanners.FieldAnnotationsScanner;
+import org.reflections.scanners.MethodParameterScanner;
+import org.reflections.util.ClasspathHelper;
+import org.reflections.util.ConfigurationBuilder;
 
 import com.dicontainer.annotations.Dependency;
 import com.dicontainer.annotations.ToInject;
@@ -16,6 +22,9 @@ import com.google.gson.GsonBuilder;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * @author Lucas A S Almeida
+ */
 public class Container {
 
     private static Container INSTANCE;
@@ -23,13 +32,18 @@ public class Container {
     private static final Gson GSON = new Gson();
     private static final GsonBuilder GSON_BUILDER = new GsonBuilder();
     // Interface -> dependency
-    private Map<Class, DependencyToInject> dependenciesToInjectByInterface;
-    private Map<Class, Constructor> constructorsToInject;
-    private Map<Class, Constructor> dependenciesConstructor;
-    private Reflections reflections = new Reflections();
+    private Map<Class<?>, DependencyToInject> dependenciesToInjectByInterface = 
+            new HashMap<Class<?>, DependencyToInject>();
+
+    private Map<Class<?>, Constructor<?>> constructorsToInject = 
+            new HashMap<Class<?>, Constructor<?>>();
+
+    private Reflections reflections = //new Reflections("all");
+    new Reflections(new ConfigurationBuilder()
+            .setUrls(ClasspathHelper.forPackage("all"))
+            .setScanners(new FieldAnnotationsScanner(), new MethodParameterScanner()));
     private ConfigHolder configHolder;
 
-    //procurar classe, procurar metodo com @toinject annotation
     static {
         GSON_BUILDER.setPrettyPrinting();
         //public <T> T fromJson(String json, Class<T> classOfT)
@@ -41,19 +55,19 @@ public class Container {
     }
 
     @Getter @Setter
-    private class DependencyToInject <T> {
-        private Constructor<T> constructorToCall; //Constructor of the dependency to call.
-        private Class<T> dependencyClass; //Class to be instantiated.
+    private class DependencyToInject {
+        private Constructor<?> constructorToCall; //Constructor of the dependency to call.
+        private Class<?> dependencyClass; //Class to be instantiated.
         private String annotatedValue; //Value of the Dependency annotation.
 
-        public DependencyToInject(Constructor<T> constructor, Class<T> clazz, String annotation) {
+        public DependencyToInject(Constructor<?> constructor, Class<?> clazz, String annotation) {
             constructorToCall = constructor;
             dependencyClass = clazz;
             annotatedValue = annotation;
         }
 
-        public T instantiate() {
-            T instance = null;
+        public Object instantiate() {
+            Object instance = null;
             try {
                 instance = constructorToCall.newInstance();
             } catch(Exception e) {
@@ -61,12 +75,22 @@ public class Container {
             }
             return instance;
         }
+        
+        public Class<?> getDependencyClass() {
+            return this.dependencyClass;
+        }
     }
 
     private Container() {
         //loadConfig();
         loadDependencies();
         loadConstructorsToInject();
+    }
+
+    public synchronized static Container getInstance() {
+        if(INSTANCE == null)
+            INSTANCE = new Container();
+        return INSTANCE;
     }
 
     private Constructor<?> getConstructorToInstantiateDependency(Class<?> dependency) {
@@ -78,24 +102,24 @@ public class Container {
     }
 
     private <V> void loadDependencies() {
-        for(Class<?> clazz : reflections.getTypesAnnotatedWith(Dependency.class)) {
-            Constructor<?> constructorToCall = getConstructorToInstantiateDependency(clazz);
-            String annotatedValue = clazz.getDeclaredAnnotation(Dependency.class).to();
-            Class referredInterface;
+        for(Class<?> dependencyClass : reflections.getTypesAnnotatedWith(Dependency.class)) {
+            Constructor<?> constructorToCall = getConstructorToInstantiateDependency(dependencyClass);
+            String annotatedValue = dependencyClass.getDeclaredAnnotation(Dependency.class).to();
+            Class<?> referredInterface;
             try {
                 referredInterface = Class.forName(annotatedValue);
             } catch(Exception e) {
                 continue;
             }
-            test(constructorToCall, clazz, annotatedValue);
-            dependenciesToInjectByInterface.put(referredInterface, new DependencyToInject(constructorToCall, clazz, annotatedValue));
+            dependenciesToInjectByInterface.put(referredInterface, 
+                    new DependencyToInject(constructorToCall, dependencyClass, annotatedValue));
         }
     }
 
     // Test if it can work
-    private <V> void test(Constructor<V> a, Class<V> b, String c) {
+    /*private <V> void test(Constructor<V> a, Class<V> b, String c) {
         DependencyToInject a = new DependencyToInject<V>(a, b, c);
-    }
+    }*/
 
     private void loadConstructorsToInject() {
         for(Constructor<?> constructor : reflections.getConstructorsAnnotatedWith(ToInject.class)) {
@@ -118,22 +142,43 @@ public class Container {
         return Files.readString(filePath);
     }
 
-    private synchronized static Container getInstance() {
-        if(INSTANCE == null)
-            INSTANCE = new Container();
-        return INSTANCE;
+    private Constructor<?> getConstructorToInject(Class<?> clazz) {
+        return constructorsToInject.get(clazz);
     }
 
-    public Object getNewInstanceFor(Class dependencyReceiver) throws Exception {
-        if(dependenciesToInjectByInterface.containsKey(dependencyReceiver)) {
-            DependencyToInject toInject = dependenciesToInjectByInterface.get(dependencyReceiver);
-            return toInject.getConstructorToCall().invoke(dependenciesToInjectByInterface.get(dependencyReceiver), (Object[]) null);
+    /**
+     * Instantiate the dependency based on a dependencyReceiver class parameter.
+     * It injects all dependencies that are marked by the @Dependency annotation
+     * in the constructor registrated.
+     * 
+     * @return 
+     */
+    private Object getDependencyInstance(Class<?> dependencyReceiver)
+            throws InstantiationException, IllegalAccessException,
+            IllegalArgumentException, InvocationTargetException
+    {
+        Constructor<?> constructorToInject = getConstructorToInject(dependencyReceiver);
+        Object[] parametersArray = new Object[constructorToInject.getParameterCount()];
+        int i = 0;
+        for(Class<?> constructorParameter : constructorToInject.getParameterTypes())
+        {
+            DependencyToInject dependency = dependenciesToInjectByInterface.get(constructorParameter);
+            if(dependency != null) {
+                parametersArray[i++] = dependency.instantiate();
+                constructorToInject.newInstance();
+            }
+        }
+        if(i == 0)
+            return constructorToInject.newInstance((Object[]) null);
+        return constructorToInject.newInstance(parametersArray);
+    }
+
+    public Object getNewInstanceFor(Class<?> dependencyReceiver) throws Exception {
+        if(constructorsToInject.containsKey(dependencyReceiver)) {
+            return getDependencyInstance(dependencyReceiver);
+            /*DependencyToInject toInject = dependenciesToInjectByInterface.get(dependencyReceiver);
+            return toInject.instantiate();*/
         }
         return null;
-    }
-
-    public static Object getInstanceFor(Class classToInstatiate) throws Exception
-    {
-        return Container.getInstance().getNewInstanceFor(classToInstatiate);
     }
 }
