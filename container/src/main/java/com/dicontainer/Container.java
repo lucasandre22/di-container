@@ -10,7 +10,6 @@ import java.util.Map;
 
 import org.reflections.Reflections;
 import org.reflections.scanners.Scanners;
-import org.reflections.scanners.Scanners.*;
 import org.reflections.util.ConfigurationBuilder;
 
 import com.dicontainer.annotations.Dependency;
@@ -22,14 +21,15 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
+ * A basic Dependency Injection Container built to understand the principle
+ * 
  * @author Lucas A S Almeida
  */
 public class Container {
 
     private static Container INSTANCE;
-    public static final String CONFIG_FILE = "dicontainer.config";
-    private static final Gson GSON = new Gson();
     private static final GsonBuilder GSON_BUILDER = new GsonBuilder();
+
     // Interface -> dependency
     private Map<Class<?>, DependencyToInject> dependenciesToInjectByInterface = 
             new HashMap<Class<?>, DependencyToInject>();
@@ -37,23 +37,13 @@ public class Container {
     private Map<Class<?>, Constructor<?>> constructorsToInject = 
             new HashMap<Class<?>, Constructor<?>>();
 
-    private Reflections reflections = //new Reflections("all");
+    private Reflections reflections =
             new Reflections(new ConfigurationBuilder()
             .forPackage("all")
             .setScanners(Scanners.ConstructorsAnnotated, Scanners.TypesAnnotated));
-    /*new Reflections(new ConfigurationBuilder()
-            .setUrls(ClasspathHelper.forPackage("all"))
-            .setScanners(new FieldAnnotationsScanner(), new MethodParameterScanner()));*/
-    private ConfigHolder configHolder;
 
     static {
         GSON_BUILDER.setPrettyPrinting();
-        //public <T> T fromJson(String json, Class<T> classOfT)
-    }
-
-    private class ConfigHolder {
-        //interface -> class
-        private Map<String, String> config;
     }
 
     @Getter @Setter
@@ -71,25 +61,18 @@ public class Container {
         public Object instantiate() {
             Object instance = null;
             try {
-                //fix this
+                //TODO: fix to be able to inject dependencies into dependencies recursively
                 instance = constructorToCall.newInstance();
             } catch(Exception e) {
                 System.out.println(e);
             }
             return instance;
         }
-        
-        public Class<?> getDependencyClass() {
-            return this.dependencyClass;
-        }
     }
 
     private Container() {
-        //loadConfig();
         loadDependencies();
         loadConstructorsToInject();
-        //use this
-        this.getClass().getPackage();
     }
 
     public synchronized static Container getInstance() {
@@ -122,26 +105,11 @@ public class Container {
         }
     }
 
-    // Test if it can work
-    /*private <V> void test(Constructor<V> a, Class<V> b, String c) {
-        DependencyToInject a = new DependencyToInject<V>(a, b, c);
-    }*/
-
     private void loadConstructorsToInject() {
         for(Constructor<?> constructor : reflections.get(
                 Scanners.ConstructorsAnnotated.with(ToInject.class).as(Constructor.class))) {
             constructorsToInject.put(constructor.getDeclaringClass(), constructor);
         }
-    }
-
-    private void loadConfig() {
-        String fileContent = null;
-        try {
-            fileContent = getFileContent(CONFIG_FILE);
-        } catch(IOException e) {
-            //throw e;
-        }
-        configHolder = GSON.fromJson(fileContent, ConfigHolder.class);
     }
 
     private String getFileContent(String filename) throws IOException {
@@ -158,7 +126,9 @@ public class Container {
      * It injects all dependencies that are marked by the @Dependency annotation
      * in the constructor registrated.
      * 
-     * @return 
+     * @param dependencyReceiver the class that will have the dependency injected
+     * 
+     * @return the dependency instantiated
      */
     private Object getDependencyInstance(Class<?> dependencyReceiver)
             throws InstantiationException, IllegalAccessException,
@@ -178,12 +148,19 @@ public class Container {
             return constructorToInject.newInstance((Object[]) null);
         return constructorToInject.newInstance(parametersArray);
     }
-
-    public Object getNewInstanceFor(Class<?> dependencyReceiver) throws Exception {
-        if(constructorsToInject.containsKey(dependencyReceiver)) {
-            return getDependencyInstance(dependencyReceiver);
-            /*DependencyToInject toInject = dependenciesToInjectByInterface.get(dependencyReceiver);
-            return toInject.instantiate();*/
+    
+    /**
+     * Gets a new instance of the class that has a dependency to be injected.
+     * 
+     * @param dependencyReceiver the class that will have the dependency injected
+     * 
+     * @return the dependencyReceiver class instance
+     * @throws Exception
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T getNewInstanceFor(Class<T> dependencyReceiver) throws Exception {
+        if(getInstance().constructorsToInject.containsKey(dependencyReceiver)) {
+            return (T) getInstance().getDependencyInstance(dependencyReceiver);
         }
         return null;
     }

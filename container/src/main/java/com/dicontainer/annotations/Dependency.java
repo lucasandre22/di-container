@@ -3,9 +3,15 @@ package com.dicontainer.annotations;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
-//On class
+/**
+ * Annotation that represents the dependency and stores the respective
+ * class that it will be injecting.
+ * 
+ * @author Lucas A S Almeida
+ *
+ * @param to the class canonical name that the dependency will be injected
+ */
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Dependency {
-    //The dependency will tell which class it is going to be injected.
     public String to();
 }
